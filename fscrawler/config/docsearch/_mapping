@@ -1,0 +1,49 @@
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "nori_analyzer": {
+          "type": "custom",
+          "tokenizer": "nori_tokenizer",
+          "filter": ["nori_readingform", "lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "content": {
+        "type": "text",
+        "analyzer": "nori_analyzer",
+        "fields": {
+          "english": {
+            "type": "text",
+            "analyzer": "english"
+          }
+        }
+      },
+      "file": {
+        "properties": {
+          "filename": {
+            "type": "text",
+            "analyzer": "nori_analyzer",
+            "fields": {
+              "keyword": {
+                "type": "keyword"
+              }
+            }
+          },
+          "filesize": { "type": "long" },
+          "last_modified": { "type": "date" },
+          "content_type": { "type": "keyword" }
+        }
+      },
+      "path": {
+        "properties": {
+          "real": { "type": "keyword" },
+          "virtual": { "type": "keyword" }
+        }
+      }
+    }
+  }
+}

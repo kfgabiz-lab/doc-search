@@ -1,0 +1,116 @@
+# DocSearch - 전체 서비스 구성 파일
+# 실행 명령어: docker-compose up -d
+# 종료 명령어: docker-compose down
+
+version: '3.8'
+
+services:
+
+  # ─────────────────────────────────────────
+  # 1. Elasticsearch: 검색 엔진
+  #    - nori 한국어 형태소 분석기 포함 커스텀 이미지
+  #    - 보안 비활성화 (내부망 전용)
+  #    - 데이터 볼륨 마운트 (재시작해도 데이터 유지)
+  # ─────────────────────────────────────────
+  elasticsearch:
+    build:
+      context: ./elasticsearch
+    container_name: es-docsearch
+    environment:
+      - discovery.type=single-node          # 단일 노드 모드
+      - xpack.security.enabled=false        # 보안 비활성화 (내부 전용)
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g         # 메모리 1GB 할당
+      - http.cors.enabled=true              # 브라우저 직접 호출 허용
+      - http.cors.allow-origin=*            # 모든 출처 허용 (내부망 전용)
+    ports:
+      - "9200:9200"                          # 브라우저에서 localhost:9200 으로 접근
+    volumes:
+      - es-data:/usr/share/elasticsearch/data  # 데이터 영속 보존
+    networks:
+      - docsearch-net
+    healthcheck:
+      # ES가 완전히 준비될 때까지 대기 (FSCrawler가 너무 빨리 시작하지 않도록)
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─────────────────────────────────────────
+  # 2. FSCrawler: PDF 자동 인덱서
+  #    - /documents 폴더를 5분마다 감지
+  #    - 새 PDF 추가 시 자동으로 ES에 인덱싱
+  # ─────────────────────────────────────────
+  fscrawler:
+    build:
+      context: ./fscrawler                             # Dockerfile로 빌드 (설정 파일 이미지에 포함)
+    container_name: fscrawler-docsearch
+    depends_on:
+      elasticsearch:
+        condition: service_healthy  # ES 준비 완료 후 시작
+    volumes:
+      - ./documents:/usr/share/fscrawler/documents     # PDF 파일 폴더 (동적 마운트)
+    environment:
+      # 메모리 2GB + 콘솔 로그 출력
+      - FS_JAVA_OPTS=-Xms512m -Xmx2g -Dlog4j.configurationFile=/usr/share/fscrawler/config/log4j2.xml
+    command: fscrawler docsearch --rest                  # 크롤러 + REST API(8080) 동시 실행
+    ports:
+      - "8080:8080"                                     # REST API 포트 노출
+    networks:
+      - docsearch-net
+    restart: on-failure                                 # 오류 시 자동 재시작
+
+  # ─────────────────────────────────────────
+  # 3. Kibana: ES 데이터 시각화 및 관리 도구
+  #    - 브라우저에서 localhost:5601 으로 접근
+  #    - ES와 동일 버전(7.17.0) 사용 필수
+  # ─────────────────────────────────────────
+  kibana:
+    image: kibana:7.17.0
+    container_name: kibana-docsearch
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - docsearch-net
+
+  # ─────────────────────────────────────────
+  # 4. Next.js: 검색 웹 화면
+  #    - 브라우저에서 localhost:3000 으로 접근
+  #    - 브라우저 → ES(localhost:9200) 직접 호출
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend-docsearch
+    ports:
+      - "3000:3000"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./documents:/usr/share/fscrawler/documents:ro   # 파일시스템 조회용 (읽기 전용)
+    environment:
+      - ES_INTERNAL_URL=http://elasticsearch:9200        # 서버사이드 API Route용 내부 URL
+      - DOCS_PATH=/usr/share/fscrawler/documents         # 문서 폴더 경로
+      - FSCRAWLER_URL=http://fscrawler:8080              # FSCrawler REST API 내부 URL
+    networks:
+      - docsearch-net
+
+# ─────────────────────────────────────────
+# 볼륨: ES 데이터 영속 보존
+# Docker 재시작해도 인덱스 데이터 유지
+# ─────────────────────────────────────────
+volumes:
+  es-data:
+
+# ─────────────────────────────────────────
+# 네트워크: 서비스 간 통신
+# ─────────────────────────────────────────
+networks:
+  docsearch-net:
+    driver: bridge

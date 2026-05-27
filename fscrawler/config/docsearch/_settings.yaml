@@ -1,0 +1,63 @@
+# FSCrawler 잡 설정 파일
+# 파일명(docSearch)이 docker-compose의 command와 일치해야 합니다
+
+name: "docsearch"
+
+fs:
+  # PDF 파일이 있는 폴더 (Docker 컨테이너 내부 경로)
+  url: "/usr/share/fscrawler/documents"
+
+  # 폴더 변경 감지 주기 (5분마다 새 파일 확인)
+  update_rate: "5m"
+
+  # 처리 허용 파일 목록 (화이트리스트 - Tika가 처리 가능한 포맷만)
+  includes:
+    - "*.pdf"
+    - "*.PDF"
+    - "*.doc"
+    - "*.DOC"
+    - "*.docx"
+    - "*.DOCX"
+    - "*.xls"
+    - "*.XLS"
+    - "*.xlsx"
+    - "*.XLSX"
+    - "*.ppt"
+    - "*.PPT"
+    - "*.pptx"
+    - "*.PPTX"
+    - "*.txt"
+    - "*.TXT"
+    - "*.hwp"
+    - "*.HWP"
+
+  # 시스템 파일 제외 (블랙리스트)
+  excludes:
+    - "*/~*"
+    - "*/.DS_Store"
+
+  # PDF 텍스트 전체 인덱싱 (-1 = 제한 없음)
+  indexed_chars: -1
+
+  # 스캔본 PDF OCR 비활성화 (속도 우선)
+  pdf_ocr: false
+
+  # 하위 폴더도 탐색
+  recursive: true
+
+rest:
+  # REST API 서버 (전체/단건 인덱싱 트리거용)
+  url: "http://0.0.0.0:8080"
+  enable_cors: true
+
+elasticsearch:
+  # FSCrawler 2.9 방식: nodes 형식 사용
+  nodes:
+    - url: "http://elasticsearch:9200"
+
+  # ES 인덱스 이름
+  index: "docsearch"
+
+  # 벌크 인덱싱 설정 (속도 최적화)
+  bulk_size: 100
+  flush_interval: "5s"
